@@ -451,7 +451,6 @@ def test_logsumexp():
         )
         print(f"LogSumExp backward test {i+1} passed!")
 
-
 def test_logsumexp_specific_cases():
     """Test specific edge cases for logsumexp"""
     
@@ -492,6 +491,329 @@ def test_logsumexp_specific_cases():
     np.testing.assert_allclose(our_softmax, pt_softmax.detach().numpy(), rtol=1e-5, atol=1e-5)
     print("LogSumExp specific case 3 (softmax relation) passed!")
 
+def test_summation():
+    """Test the summation operation with challenging cases"""
+    print("\n=== TESTING SUMMATION ===")
+    
+    # Define challenging test cases
+    test_cases = [
+        # Basic cases
+        {"data": np.random.rand(5, 5), "axis": None, "keepdims": False, "name": "Basic 2D, all axes"},
+        {"data": np.random.rand(5, 5), "axis": 0, "keepdims": False, "name": "Basic 2D, axis 0"},
+        {"data": np.random.rand(5, 5), "axis": 1, "keepdims": True, "name": "Basic 2D, axis 1 with keepdims"},
+        
+        # Extreme values
+        {"data": np.random.rand(10, 10) * 1e10, "axis": None, "keepdims": False, "name": "Large values (1e10)"},
+        {"data": np.random.rand(10, 10) * 1e-10, "axis": 0, "keepdims": True, "name": "Small values (1e-10)"},
+        {"data": np.array([[1e15, 1e-15], [1e-15, 1e15]]), "axis": 1, "keepdims": False, "name": "Mixed extreme values"},
+        
+        # Large dimensions
+        {"data": np.random.rand(1000, 5), "axis": 0, "keepdims": False, "name": "Large first dimension (1000x5)"},
+        {"data": np.random.rand(5, 1000), "axis": 1, "keepdims": True, "name": "Large second dimension (5x1000)"},
+        
+        # Higher dimensions
+        {"data": np.random.rand(10, 10, 10), "axis": (0, 2), "keepdims": False, "name": "3D with multiple axes"},
+        {"data": np.random.rand(5, 5, 5, 5), "axis": (1, 2), "keepdims": True, "name": "4D with multiple axes and keepdims"},
+        
+        # Special patterns
+        {"data": np.ones((20, 20)), "axis": None, "keepdims": False, "name": "All ones"},
+        {"data": np.zeros((20, 20)), "axis": 0, "keepdims": True, "name": "All zeros"},
+        {"data": np.eye(20), "axis": 1, "keepdims": False, "name": "Identity matrix"},
+        
+        # Edge cases
+        {"data": np.array([1.0]), "axis": None, "keepdims": False, "name": "Single value"},
+        {"data": np.random.rand(1, 1, 1, 1), "axis": (1, 2), "keepdims": True, "name": "Multiple singleton dimensions"},
+    ]
+    
+    for i, test_case in enumerate(test_cases):
+        data = test_case["data"]
+        axis = test_case["axis"]
+        keepdims = test_case["keepdims"]
+        name = test_case["name"]
+        
+        # Create tensors
+        pt_x = torch.tensor(data, dtype=torch.float32, requires_grad=True)
+        x = Tensor(data, requires_grad=True)
+        
+        # PyTorch sum
+        if isinstance(axis, tuple):
+            # For multiple axes in PyTorch, we need to do them one by one
+            expected = pt_x
+            for ax in sorted(axis, reverse=True):  # Start from the highest axis
+                expected = expected.sum(dim=ax, keepdim=keepdims)
+        else:
+            expected = pt_x.sum(dim=axis, keepdim=keepdims)
+        
+        # Our summation
+        result = summation(x, axis=axis, keepdims=keepdims)
+        
+        # Check forward pass
+        try:
+            np.testing.assert_allclose(
+                result.data,
+                expected.detach().numpy(),
+                rtol=1e-5, atol=1e-5,
+                err_msg=f"Summation forward pass failed"
+            )
+            # print(f"  ✓ Forward pass successful")
+        except Exception as e:
+            print(f"  ✗ Forward pass failed: {e}")
+            continue
+        
+        # Generate random gradient for backward pass
+        grad_output_np = np.random.rand(*result.data.shape)
+        if isinstance(grad_output_np, float):
+            grad_output_np = np.float32(grad_output_np)
+        else:
+            grad_output_np = grad_output_np.astype(np.float32)
+        grad_output_torch = torch.tensor(grad_output_np)
+        
+        # Compute gradients
+        expected.backward(grad_output_torch)
+        result.backward(grad_output_np)
+        
+        # Check backward pass
+        try:
+            np.testing.assert_allclose(
+                x.grad,
+                pt_x.grad.detach().numpy(),
+                rtol=1e-4, atol=1e-5,
+                err_msg=f"broadcast_to backward pass failed"
+            )
+            # print(f"  ✓ Backward pass successful")
+            result_msg = "Successful."
+        except Exception as e:
+            result_msg = "Failed."
+            print(f"  ✗ Backward pass failed: {e}")
+        
+        # Reset gradients
+        pt_x.grad = None
+        x.grad = np.zeros_like(x.data)
+        
+        print(
+            f"Test case {i+1}: {name}."
+            # f" Shape: {data.shape}, Axis: {axis}, Keepdims: {keepdims}."
+            f" {result_msg}"
+        )
+
+def test_broadcast_to():
+    """Test the broadcast_to operation with challenging cases"""
+    print("\n=== TESTING BROADCAST_TO ===")
+    
+    # Define challenging test cases
+    test_cases = [
+        # Basic broadcasting
+        {"data": np.random.rand(1), "shape": (10,), "name": "Scalar to vector"},
+        {"data": np.random.rand(1, 5), "shape": (10, 5), "name": "Row to matrix"},
+        {"data": np.random.rand(5, 1), "shape": (5, 10), "name": "Column to matrix"},
+        
+        # Extreme values
+        {"data": np.random.rand(1, 3) * 1e9, "shape": (5, 3), "name": "Large values (1e9)"},
+        {"data": np.random.rand(1, 3) * 1e-9, "shape": (5, 3), "name": "Small values (1e-9)"},
+        {"data": np.array([[1e15], [1e-15]]), "shape": (2, 5), "name": "Mixed extreme values"},
+        
+        # Large dimensions
+        {"data": np.random.rand(1, 5), "shape": (1000, 5), "name": "Broadcast to large first dim (1000)"},
+        {"data": np.random.rand(5, 1), "shape": (5, 1000), "name": "Broadcast to large second dim (1000)"},
+        
+        # Higher dimensions
+        {"data": np.random.rand(1, 5, 1), "shape": (10, 5, 8), "name": "3D broadcasting"},
+        {"data": np.random.rand(1, 1, 1, 5), "shape": (7, 6, 5, 5), "name": "4D broadcasting"},
+        
+        # Multiple dimensions broadcasted
+        {"data": np.random.rand(1, 1, 3), "shape": (8, 8, 3), "name": "Broadcasting multiple dimensions"},
+        
+        # Special patterns
+        {"data": np.ones((1, 5)), "shape": (10, 5), "name": "Broadcasting ones"},
+        {"data": np.zeros((1, 5)), "shape": (10, 5), "name": "Broadcasting zeros"},
+        
+        # No broadcasting (identity case)
+        {"data": np.random.rand(5, 5), "shape": (5, 5), "name": "No broadcasting (same shape)"},
+        
+        # Edge cases
+        {"data": np.array([1.0]), "shape": (1, 1, 1, 1), "name": "Scalar to higher dims"},
+    ]
+    
+    for i, test_case in enumerate(test_cases):
+        data = test_case["data"]
+        shape = test_case["shape"]
+        name = test_case["name"]
+        
+        # Create tensors
+        pt_x = torch.tensor(data, dtype=torch.float32, requires_grad=True)
+        x = Tensor(data, requires_grad=True)
+        
+        # PyTorch broadcast (expand)
+        # Handle the case of broadcasting to higher dimensions
+        if pt_x.dim() < len(shape):
+            # Add dimensions to match the target shape
+            expanded_dims = len(shape) - pt_x.dim()
+            reshape_dims = [1] * expanded_dims + list(pt_x.shape)
+            pt_x_reshaped = pt_x.reshape(reshape_dims)
+            expected = pt_x_reshaped.expand(shape)
+        else:
+            expected = pt_x.expand(shape)
+        
+        # Our broadcast_to
+        result = broadcast_to(x, shape)
+        
+        # Check forward pass
+        try:
+            np.testing.assert_allclose(
+                result.data,
+                expected.detach().numpy(),
+                rtol=1e-5, atol=1e-5,
+                err_msg=f"broadcast_to forward pass failed"
+            )
+            # print(f"  ✓ Forward pass successful")
+        except Exception as e:
+            print(f"  ✗ Forward pass failed: {e}")
+            continue
+        
+        # Generate random gradient for backward pass
+        grad_output_np = np.random.rand(*shape).astype(np.float32)
+        grad_output_torch = torch.tensor(grad_output_np)
+        
+        # Compute gradients
+        expected.backward(grad_output_torch)
+        result.backward(grad_output_np)
+        
+        # Check backward pass
+        try:
+            np.testing.assert_allclose(
+                x.grad,
+                pt_x.grad.detach().numpy(),
+                rtol=1e-4, atol=1e-5,
+                err_msg=f"broadcast_to backward pass failed"
+            )
+            # print(f"  ✓ Backward pass successful")
+            result_msg = "Successful."
+        except Exception as e:
+            result_msg = "Failed."
+            print(f"  ✗ Backward pass failed: {e}")
+        
+        # Reset gradients
+        pt_x.grad = None
+        x.grad = np.zeros_like(x.data)
+        
+        print(
+            f"Test case {i+1}: {name}."
+            # f" Shape: {data.shape}, Axis: {axis}, Keepdims: {keepdims}."
+            f" {result_msg}"
+        )
+
+def test_softmax():
+    """Test the softmax operation with challenging cases"""
+    print("\n=== TESTING SOFTMAX ===")
+    
+    # Define challenging test cases
+    test_cases = [
+        # Basic cases
+        {"data": np.random.rand(10), "axis": None, "name": "Basic 1D vector"},
+        {"data": np.random.rand(5, 5), "axis": 1, "name": "Basic 2D, axis 1"},
+        {"data": np.random.rand(5, 5), "axis": 0, "name": "Basic 2D, axis 0"},
+        
+        # Extreme values
+        {"data": np.random.rand(10) * 1e9, "axis": None, "name": "Large values (1e9)"},
+        {"data": np.random.rand(10) * 1e-9, "axis": None, "name": "Small values (1e-9)"},
+        {"data": np.array([1e15, 1e-15, 0, -1e-15, -1e15]), "axis": None, "name": "Mixed extreme values"},
+        
+        # Numerical stability challenges
+        {"data": np.array([1000, 0, -1000]), "axis": None, "name": "Very different values"},
+        {"data": np.array([1e5, 1e5 + 1e-5]), "axis": None, "name": "Nearly identical large values"},
+        {"data": np.ones(10) * 1e5, "axis": None, "name": "All identical large values"},
+        
+        # Large dimensions
+        {"data": np.random.rand(1000, 5), "axis": 1, "name": "Large first dimension (1000x5)"},
+        {"data": np.random.rand(5, 1000) * 1e9, "axis": 0, "name": "Large second dimension (5x1000)"},
+        
+        # Higher dimensions
+        {"data": np.random.rand(10, 10, 10), "axis": 2, "name": "3D tensor, last axis"},
+        {"data": np.random.rand(10, 10, 10), "axis": 1, "name": "3D tensor, middle axis"},
+        {"data": np.random.rand(5, 5, 5, 5), "axis": 0, "name": "4D tensor, first axis"},
+        
+        # Special patterns
+        {"data": np.zeros((10, 10)), "axis": 1, "name": "All zeros (uniform distribution)"},
+        {"data": np.ones((10, 10)), "axis": 1, "name": "All ones (uniform distribution)"},
+        {"data": np.eye(10), "axis": 1, "name": "Identity matrix"},
+        
+        # Edge cases
+        {"data": np.array([42.0]), "axis": None, "name": "Single value (should be 1.0)"},
+        {"data": np.zeros((1, 1, 1)), "axis": 1, "name": "Multiple singleton dimensions"},
+    ]
+    
+    for i, test_case in enumerate(test_cases):
+        data = test_case["data"]
+        axis = test_case["axis"]
+        name = test_case["name"]
+        
+        # print(f"\nTest case {i+1}: {name}")
+        # print(f"  Shape: {data.shape}, Axis: {axis}")
+        
+        # Create tensors
+        pt_x = torch.tensor(data, dtype=torch.float32, requires_grad=True)
+        x = Tensor(data, requires_grad=True)
+        
+        # PyTorch softmax
+        if axis is None:
+            # Flatten for axis=None
+            flattened = pt_x.reshape(-1)
+            expected = torch.nn.functional.softmax(flattened, dim=0)
+        else:
+            expected = torch.nn.functional.softmax(pt_x, dim=axis)
+        
+        # Our softmax
+        result = softmax(x, axis=axis)
+        
+        # Check forward pass
+        try:
+            np.testing.assert_allclose(
+                result.data,
+                expected.detach().numpy(),
+                rtol=1e-5, atol=1e-5,
+                err_msg=f"Softmax forward pass failed"
+            )
+            # print(f"  ✓ Forward pass successful")
+        except Exception as e:
+            print(f"  ✗ Forward pass failed: {e}")
+            continue
+        
+        # Generate random gradient for backward pass
+        grad_output_np = np.random.rand(*result.data.shape).astype(np.float32)
+        
+        # For PyTorch, ensure gradient has the right shape
+        if axis is None:
+            grad_output_torch = torch.tensor(grad_output_np.reshape(-1))
+        else:
+            grad_output_torch = torch.tensor(grad_output_np)
+        
+        # Compute gradients
+        expected.backward(grad_output_torch)
+        result.backward(grad_output_np)
+        
+        # Check backward pass
+        try:
+            np.testing.assert_allclose(
+                x.grad,
+                pt_x.grad.detach().numpy(),
+                rtol=1e-4, atol=1e-5,
+                err_msg=f"broadcast_to backward pass failed"
+            )
+            # print(f"  ✓ Backward pass successful")
+            result_msg = "Successful."
+        except Exception as e:
+            result_msg = "Failed."
+            print(f"  ✗ Backward pass failed: {e}")
+        
+        # Reset gradients
+        pt_x.grad = None
+        x.grad = np.zeros_like(x.data)
+        
+        print(
+            f"Test case {i+1}: {name}."
+            # f" Shape: {data.shape}, Axis: {axis}, Keepdims: {keepdims}."
+            f" {result_msg}"
+        )
 
 if __name__ == "__main__":
     print("Testing ReLU operation...")

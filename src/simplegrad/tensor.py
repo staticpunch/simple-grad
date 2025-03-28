@@ -138,8 +138,12 @@ class Tensor:
         out._backward = _backward
         out._prev = {self}
         return out
+
+    @property
+    def shape(self):
+        return self.data.shape
     
-    def backward(self):
+    def backward(self, gradient=None):
         topo = []
         visited = set()
         def build_topo(node):
@@ -152,6 +156,13 @@ class Tensor:
 
         build_topo(self)
 
-        self.grad = np.ones_like(self.data)
+        ### <note>
+        ### make the backward function accept arbitrary gradient.
+        if gradient is None:
+            self.grad = np.ones_like(self.data)
+        else:
+            assert gradient.shape == self.data.shape, f"Gradient shape {gradient.shape} doesn't match tensor shape {self.data.shape}"
+            self.grad = gradient
+        ### </note>
         for tensor in reversed(topo):
             tensor._backward()
