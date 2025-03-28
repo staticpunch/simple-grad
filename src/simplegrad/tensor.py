@@ -107,7 +107,7 @@ class Tensor:
         return out
 
     def __neg__(self):
-        out = Tensor(- self.data, requires_grad=self.requires_grad)
+        out = Tensor(-self.data, requires_grad=self.requires_grad)
 
         def _backward():
             """
@@ -116,6 +116,24 @@ class Tensor:
             """
             if self.requires_grad:
                 self.grad += out.grad * -1
+                
+        out._backward = _backward
+        out._prev = {self}
+        return out
+
+    def __pow__(self, other):
+        from numbers import Number
+        assert isinstance(other, (int, float)), "Operand must be a Scalar"
+        out = Tensor(self.data ** other, requires_grad=self.requires_grad)
+
+        def _backward():
+            """
+            out = a ** b
+            a.grad = b * (a ** (b - 1))
+            """
+            if self.requires_grad:
+                local_grad = other * (self.data ** (other - 1))
+                self.grad += out.grad * local_grad
                 
         out._backward = _backward
         out._prev = {self}

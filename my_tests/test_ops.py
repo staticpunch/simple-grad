@@ -377,6 +377,122 @@ def test_negation():
                                   rtol=1.3e-6, atol=1e-5)
         print(f"Negation backward test {i+1} passed!")
 
+def test_logsumexp():
+    # Define diverse test cases
+    test_cases = [
+        # Small values
+        {"data": np.random.rand(3, 4) * 0.001, "axis": None, "keepdims": False},
+        # Large values
+        {"data": np.random.rand(3, 4) * 100, "axis": None, "keepdims": False},
+        # Negative values
+        {"data": np.random.rand(3, 4) * -10, "axis": None, "keepdims": False},
+        # Mixed values
+        {"data": np.random.rand(3, 4) * 2 - 1, "axis": None, "keepdims": False},
+        # Single dimension reduction with keepdims=True
+        {"data": np.random.rand(3, 4) * 2 - 1, "axis": 0, "keepdims": True},
+        # Single dimension reduction with keepdims=False
+        {"data": np.random.rand(3, 4) * 2 - 1, "axis": 1, "keepdims": False},
+        # Multiple dimensions
+        {"data": np.random.rand(2, 3, 4) * 2 - 1, "axis": None, "keepdims": False},
+        # Multiple dimensions with specific axis
+        {"data": np.random.rand(2, 3, 4) * 2 - 1, "axis": 1, "keepdims": False},
+        # Multiple dimensions with tuple axis
+        {"data": np.random.rand(2, 3, 4) * 2 - 1, "axis": (0, 2), "keepdims": False},
+        # Multiple dimensions with tuple axis and keepdims=True
+        {"data": np.random.rand(2, 3, 4) * 2 - 1, "axis": (0, 2), "keepdims": True}
+    ]
+    
+    for i, test_case in enumerate(test_cases):
+        data = test_case["data"]
+        axis = test_case["axis"]
+        keepdims = test_case["keepdims"]
+        
+        # Convert to tensors
+        pt_x = torch.tensor(data, dtype=torch.float32, requires_grad=True)
+        x = Tensor.from_torch(pt_x)
+        
+        # PyTorch version
+        if axis is None:
+            # PyTorch's logsumexp requires a specific dim
+            expected = torch.logsumexp(pt_x, dim=tuple(range(pt_x.dim())), keepdim=keepdims)
+        elif isinstance(axis, int):
+            expected = torch.logsumexp(pt_x, dim=axis, keepdim=keepdims)
+        else:
+            # For multiple axes, we need to handle them one by one in PyTorch
+            temp = pt_x
+            # Process axes in reverse order to maintain correct dimensions
+            for ax in sorted(axis, reverse=True):
+                temp = torch.logsumexp(temp, dim=ax, keepdim=keepdims)
+            expected = temp
+        
+        # Our implementation
+        result = logsumexp(x, axis=axis, keepdims=keepdims)
+        
+        # Check forward pass
+        np.testing.assert_allclose(
+            result.data, 
+            expected.detach().numpy(), 
+            rtol=1e-5, atol=1e-5,
+            err_msg=f"Forward pass failed for test case {i+1}: data shape {data.shape}, axis {axis}, keepdims {keepdims}"
+        )
+        print(f"LogSumExp forward test {i+1} passed!")
+        
+        # Compute gradients
+        grad_output = torch.ones_like(expected)
+        expected.backward(grad_output)
+        result.backward()
+        
+        # Check backward pass
+        np.testing.assert_allclose(
+            x.grad, 
+            pt_x.grad.detach().numpy(), 
+            rtol=1e-5, atol=1e-5,
+            err_msg=f"Backward pass failed for test case {i+1}: data shape {data.shape}, axis {axis}, keepdims {keepdims}"
+        )
+        print(f"LogSumExp backward test {i+1} passed!")
+
+
+def test_logsumexp_specific_cases():
+    """Test specific edge cases for logsumexp"""
+    
+    # Case 1: All elements are the same (tests numerical stability)
+    data = np.ones((3, 3)) * 1000  # Large identical values
+    pt_x = torch.tensor(data, dtype=torch.float32, requires_grad=True)
+    x = Tensor.from_torch(pt_x)
+    
+    expected = torch.logsumexp(pt_x, dim=1, keepdim=False)
+    result = logsumexp(x, axis=1, keepdims=False)
+    
+    np.testing.assert_allclose(result.data, expected.detach().numpy(), rtol=1e-5, atol=1e-5)
+    print("LogSumExp specific case 1 (large identical values) passed!")
+    
+    # Case 2: Extreme differences between values (tests numerical stability)
+    data = np.array([[1e-10, 1e10], [1e-10, 1e-10]])
+    pt_x = torch.tensor(data, dtype=torch.float32, requires_grad=True)
+    x = Tensor.from_torch(pt_x)
+    
+    expected = torch.logsumexp(pt_x, dim=1, keepdim=False)
+    result = logsumexp(x, axis=1, keepdims=False)
+    
+    np.testing.assert_allclose(result.data, expected.detach().numpy(), rtol=1e-5, atol=1e-5)
+    print("LogSumExp specific case 2 (extreme value differences) passed!")
+    
+    # Case 3: Test with softmax relation (logsumexp is used in softmax implementation)
+    data = np.random.rand(5, 10) * 2 - 1
+    pt_x = torch.tensor(data, dtype=torch.float32, requires_grad=True)
+    x = Tensor.from_torch(pt_x)
+    
+    # Standard softmax calculation using logsumexp
+    pt_logsumexp = torch.logsumexp(pt_x, dim=1, keepdim=True)
+    pt_softmax = torch.exp(pt_x - pt_logsumexp)
+    
+    our_logsumexp = logsumexp(x, axis=1, keepdims=True)
+    our_softmax = np.exp(x.data - our_logsumexp.data)
+    
+    np.testing.assert_allclose(our_softmax, pt_softmax.detach().numpy(), rtol=1e-5, atol=1e-5)
+    print("LogSumExp specific case 3 (softmax relation) passed!")
+
+
 if __name__ == "__main__":
     print("Testing ReLU operation...")
     test_relu()
