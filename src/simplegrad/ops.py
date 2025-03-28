@@ -49,6 +49,17 @@ def log(tensor):
     out._backward = _backward
     out._prev = {tensor, }
     return out
+
+def exp(tensor):
+    out = Tensor(np.exp(tensor.data), requires_grad=tensor.requires_grad)
+    
+    def _backward():
+        if tensor.requires_grad:
+            tensor.grad += out.data * out.grad 
+    
+    out._backward = _backward
+    out._prev = {tensor, }
+    return out
     
 def logsumexp(tensor, axis=None, keepdims=False):
     """

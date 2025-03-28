@@ -3,7 +3,7 @@ import torch
 from torch.nn import functional as F 
 
 from simplegrad.tensor import Tensor
-from simplegrad.ops import relu, sigmoid, matmul
+from simplegrad.ops import *
 
 
 def test_relu():
