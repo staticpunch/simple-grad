@@ -377,6 +377,110 @@ def test_negation():
                                   rtol=1.3e-6, atol=1e-5)
         print(f"Negation backward test {i+1} passed!")
 
+def test_reshape():
+    """Test the reshape operation with various challenging cases"""
+    print("\n=== TESTING RESHAPE ===")
+    
+    # Define comprehensive test cases
+    test_cases = [
+        # Basic reshaping
+        {"data": np.random.rand(2, 3), "shape": (6,), "name": "2D to 1D"},
+        {"data": np.random.rand(6), "shape": (2, 3), "name": "1D to 2D"},
+        {"data": np.random.rand(2, 3), "shape": (3, 2), "name": "Transpose-like reshape"},
+        
+        # Using -1 in shape (inferred dimension)
+        {"data": np.random.rand(2, 3, 4), "shape": (-1, 4), "name": "Using -1 to infer dimension"},
+        {"data": np.random.rand(24), "shape": (2, 3, -1), "name": "Using -1 in higher dimensions"},
+        
+        # No-op reshaping (same shape)
+        {"data": np.random.rand(5, 5), "shape": (5, 5), "name": "No-op reshape (same shape)"},
+        
+        # Extreme values
+        {"data": np.random.rand(2, 3) * 1e9, "shape": (6,), "name": "Large values (1e9)"},
+        {"data": np.random.rand(2, 3) * 1e-9, "shape": (6,), "name": "Small values (1e-9)"},
+        {"data": np.array([[1e15, 1e-15], [1e-15, 1e15]]), "shape": (4,), "name": "Mixed extreme values"},
+        
+        # Large dimensions
+        {"data": np.random.rand(1000, 5), "shape": (5000,), "name": "Large dimensions flattened"},
+        {"data": np.random.rand(5000), "shape": (1000, 5), "name": "Large flat array to 2D"},
+        
+        # Complex reshaping
+        {"data": np.random.rand(2, 3, 4, 5), "shape": (6, 20), "name": "4D to 2D"},
+        {"data": np.random.rand(2, 3, 4, 5), "shape": (2, -1), "name": "4D to 2D with inferred dim"},
+        {"data": np.random.rand(100), "shape": (2, 5, 2, 5), "name": "1D to 4D"},
+        
+        # Special patterns
+        {"data": np.ones((3, 4)), "shape": (12,), "name": "Reshaping ones"},
+        {"data": np.zeros((3, 4)), "shape": (4, 3), "name": "Reshaping zeros"},
+        {"data": np.eye(4), "shape": (16,), "name": "Reshaping identity matrix"},
+        
+        # Edge cases
+        {"data": np.array([1.0]), "shape": (1, 1, 1), "name": "Scalar to 3D"},
+        {"data": np.random.rand(1, 1, 1, 5), "shape": (5,), "name": "Multiple singleton dimensions to 1D"},
+        
+        # Challenging gradients
+        {"data": np.random.rand(3, 4), "shape": (12,), "name": "Gradient flow test 1"},
+        {"data": np.random.rand(12), "shape": (3, 4), "name": "Gradient flow test 2"},
+        {"data": np.random.rand(2, 3, 4), "shape": (8, 3), "name": "Gradient flow test 3"},
+    ]
+    
+    for i, test_case in enumerate(test_cases):
+        data = test_case["data"]
+        shape = test_case["shape"]
+        name = test_case["name"]
+        
+        print(f"\nTest case {i+1}: {name}")
+        print(f"  Input shape: {data.shape}, Target shape: {shape}")
+        
+        # Create tensors
+        pt_x = torch.tensor(data, dtype=torch.float32, requires_grad=True)
+        x = Tensor(data, requires_grad=True)
+        
+        # PyTorch reshape
+        expected = pt_x.reshape(shape)
+        
+        # Our reshape
+        result = reshape(x, shape)
+        
+        # Check forward pass
+        try:
+            np.testing.assert_allclose(
+                result.data,
+                expected.detach().numpy(),
+                rtol=1e-5, atol=1e-5,
+                err_msg=f"Reshape forward pass failed"
+            )
+            print(f"  ✓ Forward pass successful")
+        except Exception as e:
+            print(f"  ✗ Forward pass failed: {e}")
+            continue
+        
+        # Generate random gradient for backward pass
+        # Get the actual shape after reshape (to handle -1 in shape)
+        actual_shape = result.data.shape
+        grad_output_np = np.random.rand(*actual_shape).astype(np.float32)
+        grad_output_torch = torch.tensor(grad_output_np)
+        
+        # Compute gradients
+        expected.backward(grad_output_torch)
+        result.backward(grad_output_np)
+        
+        # Check backward pass
+        try:
+            np.testing.assert_allclose(
+                x.grad,
+                pt_x.grad.detach().numpy(),
+                rtol=1e-4, atol=1e-5,
+                err_msg=f"Reshape backward pass failed"
+            )
+            print(f"  ✓ Backward pass successful")
+        except Exception as e:
+            print(f"  ✗ Backward pass failed: {e}")
+        
+        # Reset gradients
+        pt_x.grad = None
+        x.grad = np.zeros_like(x.data)
+
 def test_logsumexp():
     # Define diverse test cases
     test_cases = [

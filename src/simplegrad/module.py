@@ -61,6 +61,18 @@ class ReLU(Module):
     def __call__(self, x: Tensor) -> Tensor:
         return ops.relu(x)
 
+class Flatten(Module):
+    def __call__(self, X):
+        """
+        input: 
+            X: (B, X1, X2, ...)
+        output:
+            flattened X: (B, X1 * X2 * ...)
+        """
+        shape = X.shape 
+        new_shape = (shape[0], np.prod(shape[1:]))
+        return ops.reshape(X, new_shape)
+
 
 class Sequential(Module):
     def __init__(self, *modules):
@@ -72,3 +84,33 @@ class Sequential(Module):
         for module in self.modules:
             output = module(output)
         return output
+
+def one_hot(n_dim: int, y: Tensor) -> Tensor:
+    """
+    n_dim (int): Number of classes (length of each one-hot vector).
+    y (Tensor): Tensor of shape (batch_size,) with integer class indices.
+    """
+    batch_size = y.shape[0]
+    one_hot_np = np.zeros((batch_size, n_dim), dtype=int)
+    for i in range(batch_size):
+        one_hot_np.data[i, int(y.data[i])] = 1
+    one_hot_tensor = Tensor(one_hot_np, requires_grad=False)
+    return one_hot_tensor
+
+class CrossEntropyLoss(Module):
+    def __call__(self, logits: Tensor, y: Tensor):
+        n_dim = logits.shape[-1] # logits.shape: (bsz, n_dim)
+        y_one_hot = one_hot(n_dim, y) # y.shape: (bsz,)
+        zy = ops.summation(logits * y_one_hot, axis=(1,))
+        zy = ops.reshape(zy, (-1, 1))
+        zy = ops.broadcast_to(zy, logits.shape)
+
+        losses = ops.logsumexp(logits - zy, axis=(1))
+        # total_loss = ops.summation(losses) / losses.shape[-1]
+        total_loss = ops.summation(losses)
+        norm_term = ops.broadcast_to(
+            Tensor(np.array(losses.shape[-1]), requires_grad=False), 
+            shape=total_loss.shape
+        )
+        total_loss = total_loss / norm_term
+        return total_loss

@@ -42,10 +42,24 @@ def matmul(tensor1, tensor2):
     out._prev = {tensor1, tensor2}
     return out
 
+def reshape(tensor, shape):
+    if tensor.shape == shape: return tensor
+
+    out_data = np.reshape(tensor.data, shape)
+    out = Tensor(out_data, requires_grad=tensor.requires_grad)
+    def _backward():
+        if tensor.requires_grad:
+            tensor.grad += np.reshape(out.grad, tensor.shape)
+            
+    out._backward = _backward
+    out._prev = {tensor,}
+    return out
+
 def log(tensor):
     out = Tensor(np.log(tensor.data), requires_grad=tensor.requires_grad)
     def _backward():
         tensor.grad += out.grad / tensor.data
+        
     out._backward = _backward
     out._prev = {tensor, }
     return out
@@ -140,13 +154,13 @@ def summation(tensor, axis=None, keepdims=False):
     
 def broadcast_to(tensor, shape):
     """this is interestingly the reverse of summation."""
-    if tensor.shape == shape: # Optimization: no-op if shapes match
+    if tensor.shape == shape:
         return tensor
         
     out_data = np.broadcast_to(tensor.data, shape)
     out = Tensor(out_data, requires_grad=tensor.requires_grad)
     
-    input_shape = tensor.shape # Capture input shape for backward pass
+    input_shape = tensor.shape
     def _backward():
         if tensor.requires_grad:
             ishape, oshape = tensor.data.shape, out.grad.shape

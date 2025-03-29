@@ -149,9 +149,17 @@ class Tensor:
         def build_topo(node):
             if node not in visited:
                 visited.add(node)
-                for parent in node._prev:
-                    build_topo(parent)
-
+                
+                try:
+                    for parent in node._prev:
+                        build_topo(parent)
+                except:
+                    print("class:\n", node.__class__.__name__)
+                    print("data:\n", node.data.shape, node.data)
+                    print("grad:\n", node.grad)
+                    print("---" * 20)
+                    raise NotImplementedError()
+                    
                 topo.append(node)
 
         build_topo(self)
