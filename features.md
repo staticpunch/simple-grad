@@ -1,1 +1,2 @@
-Implement log, pow, logsumexp and softmax.
+Implemented log, pow, logsumexp and softmax.
+Test: `python my_tests/test_ops.py`
