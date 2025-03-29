@@ -106,7 +106,6 @@ class CrossEntropyLoss(Module):
         zy = ops.broadcast_to(zy, logits.shape)
 
         losses = ops.logsumexp(logits - zy, axis=(1))
-        # total_loss = ops.summation(losses) / losses.shape[-1]
         total_loss = ops.summation(losses)
         norm_term = ops.broadcast_to(
             Tensor(np.array(losses.shape[-1]), requires_grad=False), 

@@ -944,4 +944,22 @@ if __name__ == "__main__":
     print("\nTesting Negation operation...")
     test_negation()
 
+    print("\nTesting Reshape operation...")
+    test_reshape()
+    
+    print("\nTesting Broadcast operation...")
+    test_broadcast_to()
+    
+    print("\nTesting Summation operation...")
+    test_summation()
+    
+    print("\nTesting LogSumExp operation...")
+    test_logsumexp()
+    
+    print("\nTesting LogSumExp specific cases...")
+    test_logsumexp_specific_cases()
+    
+    print("\nTesting Softmax operation...")
+    test_softmax()
+    
     print("\nAll tests completed successfully!")
