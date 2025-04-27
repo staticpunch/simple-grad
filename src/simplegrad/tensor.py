@@ -59,20 +59,118 @@ class Tensor:
         out._backward = _backward
         out._prev = {self, other}
         return out
+
+    def __sub__(self, other):
+        assert isinstance(other, Tensor), "Operand must be a Tensor"
+        out = Tensor(self.data - other.data, requires_grad=self.requires_grad or other.requires_grad)
+
+        def _backward():
+            """
+            out = a - b
+            a.grad = out.grad * (∂_out / ∂_a)
+                   = out.grad * (∂_(a - b) / ∂_a)
+                   = out.grad * 1
+            b.grad = out.grad * (∂_out / ∂_b)
+                   = out.grad * (∂_(a - b) / ∂_b)
+                   = out.grad * (-1)
+            """
+            if self.requires_grad:
+                self.grad += out.grad
+            if other.requires_grad:
+                other.grad += out.grad * -1
+                
+        out._backward = _backward
+        out._prev = {self, other}
+        return out
+
+    def __truediv__(self, other):
+        assert isinstance(other, Tensor), "Operand must be a Tensor"
+        out = Tensor(self.data / other.data, requires_grad=self.requires_grad or other.requires_grad)
+
+        def _backward():
+            """
+            out = a / b
+            a.grad = out.grad * (∂_out / ∂_a)
+                   = out.grad * (∂_(a / b) / ∂_a)
+                   = out.grad * (1 / b)
+            b.grad = out.grad * (∂_out / ∂_b)
+                   = out.grad * (∂_(a / b) / ∂_b)
+                   = out.grad * (-a / b**2)
+            """
+            if self.requires_grad:
+                self.grad += out.grad * (1 / other.data)
+            if other.requires_grad:
+                other.grad += out.grad * (-self.data / other.data**2)
+                
+        out._backward = _backward
+        out._prev = {self, other}
+        return out
+
+    def __neg__(self):
+        out = Tensor(-self.data, requires_grad=self.requires_grad)
+
+        def _backward():
+            """
+            out = -a
+            a.grad = -1
+            """
+            if self.requires_grad:
+                self.grad += out.grad * -1
+                
+        out._backward = _backward
+        out._prev = {self}
+        return out
+
+    def __pow__(self, other):
+        from numbers import Number
+        assert isinstance(other, (int, float)), "Operand must be a Scalar"
+        out = Tensor(self.data ** other, requires_grad=self.requires_grad)
+
+        def _backward():
+            """
+            out = a ** b
+            a.grad = b * (a ** (b - 1))
+            """
+            if self.requires_grad:
+                local_grad = other * (self.data ** (other - 1))
+                self.grad += out.grad * local_grad
+                
+        out._backward = _backward
+        out._prev = {self}
+        return out
+
+    @property
+    def shape(self):
+        return self.data.shape
     
-    def backward(self):
+    def backward(self, gradient=None):
         topo = []
         visited = set()
         def build_topo(node):
             if node not in visited:
                 visited.add(node)
-                for parent in node._prev:
-                    build_topo(parent)
-
+                
+                try:
+                    for parent in node._prev:
+                        build_topo(parent)
+                except:
+                    print("class:\n", node.__class__.__name__)
+                    print("data:\n", node.data.shape, node.data)
+                    print("grad:\n", node.grad)
+                    print("---" * 20)
+                    raise NotImplementedError()
+                    
                 topo.append(node)
 
         build_topo(self)
 
-        self.grad = np.ones_like(self.data)
+        ### <note>
+        ### make the backward function accept arbitrary gradient.
+        if gradient is None:
+            self.grad = np.ones_like(self.data)
+        else:
+            assert gradient.shape == self.data.shape, f"Gradient shape {gradient.shape} doesn't match tensor shape {self.data.shape}"
+            self.grad = gradient
+        ### </note>
         for tensor in reversed(topo):
             tensor._backward()
